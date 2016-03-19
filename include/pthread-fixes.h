@@ -34,29 +34,6 @@
 
 #include <pthread.h>
 
-
-/*Android doesn't provide pthread_barrier_t for now.*/
-#ifndef PTHREAD_BARRIER_SERIAL_THREAD
-
-/* Anything except 0 will do here.*/
-#define PTHREAD_BARRIER_SERIAL_THREAD  0x12345
-
-typedef struct {
-  pthread_mutex_t  mutex;
-  pthread_cond_t   cond;
-  unsigned         count;
-} pthread_barrier_t;
-
-int pthread_barrier_init(pthread_barrier_t* barrier,
-                         const void* barrier_attr,
-                         unsigned count);
-
-int pthread_barrier_wait(pthread_barrier_t* barrier);
-int pthread_barrier_destroy(pthread_barrier_t *barrier);
-#endif  /* defined(PTHREAD_BARRIER_SERIAL_THREAD) */
-
-int pthread_yield(void);
-
 /* Workaround pthread_sigmask() returning EINVAL on versions < 4.1 by
  * replacing all calls to pthread_sigmask with sigprocmask. See:
  * https://android.googlesource.com/platform/bionic/+/9bf330b5
