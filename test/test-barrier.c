@@ -23,10 +23,11 @@
 #include "task.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 
 typedef struct {
-  uv_barrier_t barrier;
+  uv_barrier_t *barrier;
   int delay;
   volatile int posted;
   int main_barrier_wait_rval;
@@ -40,24 +41,26 @@ static void worker(void* arg) {
   if (c->delay)
     uv_sleep(c->delay);
 
-  c->worker_barrier_wait_rval = uv_barrier_wait(&c->barrier);
+  c->worker_barrier_wait_rval = uv_barrier_wait(c->barrier);
 }
 
 
 TEST_IMPL(barrier_1) {
   uv_thread_t thread;
   worker_config wc;
+  uv_barrier_t barrier;
 
   memset(&wc, 0, sizeof(wc));
+  wc.barrier = &barrier;
 
-  ASSERT(0 == uv_barrier_init(&wc.barrier, 2));
+  ASSERT(0 == uv_barrier_init(wc.barrier, 2));
   ASSERT(0 == uv_thread_create(&thread, worker, &wc));
 
   uv_sleep(100);
-  wc.main_barrier_wait_rval = uv_barrier_wait(&wc.barrier);
+  wc.main_barrier_wait_rval = uv_barrier_wait(wc.barrier);
 
   ASSERT(0 == uv_thread_join(&thread));
-  uv_barrier_destroy(&wc.barrier);
+  uv_barrier_destroy(wc.barrier);
 
   ASSERT(1 == (wc.main_barrier_wait_rval ^ wc.worker_barrier_wait_rval));
 
@@ -68,17 +71,19 @@ TEST_IMPL(barrier_1) {
 TEST_IMPL(barrier_2) {
   uv_thread_t thread;
   worker_config wc;
+  uv_barrier_t barrier;
 
   memset(&wc, 0, sizeof(wc));
+  wc.barrier = &barrier;
   wc.delay = 100;
 
-  ASSERT(0 == uv_barrier_init(&wc.barrier, 2));
+  ASSERT(0 == uv_barrier_init(wc.barrier, 2));
   ASSERT(0 == uv_thread_create(&thread, worker, &wc));
 
-  wc.main_barrier_wait_rval = uv_barrier_wait(&wc.barrier);
+  wc.main_barrier_wait_rval = uv_barrier_wait(wc.barrier);
 
   ASSERT(0 == uv_thread_join(&thread));
-  uv_barrier_destroy(&wc.barrier);
+  uv_barrier_destroy(wc.barrier);
 
   ASSERT(1 == (wc.main_barrier_wait_rval ^ wc.worker_barrier_wait_rval));
 
@@ -89,18 +94,56 @@ TEST_IMPL(barrier_2) {
 TEST_IMPL(barrier_3) {
   uv_thread_t thread;
   worker_config wc;
+  uv_barrier_t barrier;
+
+  memset(&wc, 0, sizeof(wc));
+  wc.barrier = &barrier;
+
+  ASSERT(0 == uv_barrier_init(wc.barrier, 2));
+  ASSERT(0 == uv_thread_create(&thread, worker, &wc));
+
+  wc.main_barrier_wait_rval = uv_barrier_wait(wc.barrier);
+
+  ASSERT(0 == uv_thread_join(&thread));
+  uv_barrier_destroy(wc.barrier);
+
+  ASSERT(1 == (wc.main_barrier_wait_rval ^ wc.worker_barrier_wait_rval));
+
+  return 0;
+}
+
+TEST_IMPL(barrier_4) {
+  static int no_threads = 4;
+  int i;
+  int res = 0;
+  int main_barrier_wait_rval;
+  uv_thread_t thread[no_threads];
+  worker_config wc[no_threads];
+  uv_barrier_t barrier;
+
+  /* deterministic seed */
+  srand(0);
 
   memset(&wc, 0, sizeof(wc));
 
-  ASSERT(0 == uv_barrier_init(&wc.barrier, 2));
-  ASSERT(0 == uv_thread_create(&thread, worker, &wc));
+  ASSERT(0 == uv_barrier_init(&barrier, no_threads + 1));
 
-  wc.main_barrier_wait_rval = uv_barrier_wait(&wc.barrier);
+  for(i = 0; i < no_threads; i++) {
+    wc[i].delay = rand() % 300;
+    wc[i].barrier = &barrier;
+    ASSERT(0 == uv_thread_create((thread + i), worker, (wc + i)));
+  }
 
-  ASSERT(0 == uv_thread_join(&thread));
-  uv_barrier_destroy(&wc.barrier);
+  main_barrier_wait_rval = uv_barrier_wait(&barrier);
 
-  ASSERT(1 == (wc.main_barrier_wait_rval ^ wc.worker_barrier_wait_rval));
+  uv_barrier_destroy(&barrier);
+
+  for(i = 0; i < no_threads; i++) {
+    ASSERT(0 == uv_thread_join(thread + i));
+    res ^= wc[i].worker_barrier_wait_rval;
+  }
+
+  ASSERT(1 == (main_barrier_wait_rval ^ res));
 
   return 0;
 }
